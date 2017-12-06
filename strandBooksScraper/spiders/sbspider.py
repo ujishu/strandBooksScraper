@@ -29,8 +29,10 @@ class Sbspider(scrapy.Spider):
         # Extarct list of events urls on page
         events_urls = response.xpath('//*[@id="calendar"]/div[@class="calendar__container"]/div[@class="events__list-group"]/div[@class="events__list-item"]/h3/a/@href').extract()
         
-        # requests each event page for parsing
+        # Additional check that events urls present on page
         if len(events_urls) != 0:
+            
+            # requests each event page for parsing
             for url in events_urls:
                 yield scrapy.Request(url=url, callback=self.parse_event_page)
         else:
@@ -49,40 +51,43 @@ class Sbspider(scrapy.Spider):
     def parse_event_page(self, response):
         event_title = response.xpath('//*/div[@class="event"]/h3/text()').extract_first()
         description = response.xpath('//*/div[@class="event"]/div[@class="event__info"]/div[@class="event__description"]').extract_first()
-        date_from = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr/@title').extract_first()
+        date_from_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr/@title').extract_first()
+        date_from = dt.strptime(date_from_raw, '%Y-%m-%d').strftime('%d/%m/%Y')
         
-        # Checking if Date To present on page. If not, will be used date_from value
+        # Checking if DateTo present on page. If not, will be used date_from value
+        # date_to located in abbr tag with class='value date'
         is_it_date_to = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@class').extract_first()
 
         if is_it_date_to == 'value date':
-            date_to = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@title').extract_first()
+            date_to_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@title').extract_first()
+            date_to = dt.strptime(date_to_raw, '%Y-%m-%d').strftime('%d/%m/%Y')
         else:
             date_to = date_from
             
-        start_time = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr[@class="value time"]/text()').extract_first().strip()
-        end_time = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr[@class="value time"]/text()').extract_first().strip()
+        start_time_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr[@class="value time"]/text()').extract_first().strip()
+        start_time = start_time_raw[:-2] + ' ' + start_time_raw[-2:].lower()
+        
+        end_time_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr[@class="value time"]/text()').extract_first().strip()
+        end_time = end_time_raw[:-2] + ' ' + end_time_raw[-2:].lower()
+        
         event_web_site = response.url
         event_img_raw = response.xpath('//*/div[@class="event__image"]/img/@src').extract_first()
         event_img = response.urljoin(event_img_raw)
         
         return dict({
-            "EventTitle": event_title, #Mandatory field
-            "Organization": "",
-            "Description": description,
-            "DateFrom": date_from, #Mandatory field
-            "DateTo": date_to,
-            "StartTime": start_time, #Mandatory field
-            "EndTime": end_time,
-            "EventWebsite": event_web_site, #Mandatory field
-            "RSVP_URL_or_Email": "",
-            "Speaker(s)": "",
-            "RelatedImage": event_img,
-            "Address": "",
-            "RoomNumber": "",
-            "ContactName": "",
-            "ContactEmail": "",
-            "ContactPhone": "",
-            "EventPrice": "",
-            "Keywords": "" ,
-            "Hashtag": ""
+            "title": event_title,
+            "organization": "",
+            "description": description,
+            "dateFrom": date_from,
+            "dateTo": date_to,
+            "startTime": start_time,
+            "endTime": end_time,
+            "eventWebsite": event_web_site,
+            "In_group_id": "",
+            "ticketUrl": event_web_site,
+            "eventImage": event_img,
+            "street": "",
+            "city": "",
+            "state": "",
+            "zip": "",
         })
