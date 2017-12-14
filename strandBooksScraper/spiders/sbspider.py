@@ -1,93 +1,72 @@
-import scrapy
-import logging
-from datetime import datetime as dt
-from scrapy.utils.log import configure_logging
+# -*- coding: utf-8 -*-
+from scrapy import Request, Spider
+from scrapy.loader import ItemLoader
+from strandBooksScraper.items import StrandbooksscraperItem
 
-class Sbspider(scrapy.Spider):
-    """
-    Spider for extracting data from http://www.strandbooks.com/events/
-    Usage: scrapy crawl sbspider -o file_name.json
-    """
+class Sbspider(Spider):
+    
+    allowed_domains = ['strandbooks.com']
     name = "sbspider"
     
-    # Logging spider output
-    time_for_log = dt.now().strftime('-%d%m%y-%H%M%S')
-    configure_logging(install_root_handler=False)
-    logging.basicConfig(
-        filename=name+time_for_log+'.log',
-        format='%(levelname)s: %(message)s',
-        level=logging.INFO,
-    #    stream=sys.stdout,
-    )
-    
     def start_requests(self):
-        urls = ["http://www.strandbooks.com/events/"]
-        yield scrapy.Request(url=urls[0], callback=self.parse_page_with_events)
+        # url value is first available page with events in www.strandbooks.com
+        url = "http://www.strandbooks.com/index.cfm/fuseaction/event.index/nodeID/a35c34a6-bda5-4733-9f7d-fa7187e8c2e3/?start=%7Bts%20%272015-01-01%2000%3A00%3A00%27%7D&view=list"
+        yield Request(url=url, callback=self.parse)
     
-    def parse_page_with_events(self, response):
-        
+    def parse(self, response):
         # Extarct list of events urls on page
         events_urls = response.xpath('//*[@id="calendar"]/div[@class="calendar__container"]/div[@class="events__list-group"]/div[@class="events__list-item"]/h3/a/@href').extract()
         
         # Additional check that events urls present on page
         if len(events_urls) != 0:
-            
             # requests each event page for parsing
             for url in events_urls:
-                yield scrapy.Request(url=url, callback=self.parse_event_page)
+                yield Request(url=url, callback=self.parse_attr)
         else:
-            logging.info("\nevents_urls list empty! Seems events ended.\n")
             return "\nevents_urls list empty! Seems events ended.\n"
     
         next_page = response.xpath('//*[@class="calendar__footer"]/div[@class="calendar__navigation"]/a[2]/@href').extract_first()
         
         if next_page is not None:
             next_page = response.urljoin(next_page)
-            logging.info("\n>>>>>>>>>>>>>>>>>>> NEXT PAGE >>>>>>>>>>>>>>>>>>>>>\n")
-            yield response.follow(next_page, callback=self.parse_page_with_events)
+            #logging.info("\n>>>>>>>>>>>>>>>>>>> NEXT PAGE >>>>>>>>>>>>>>>>>>>>>\n")
+            yield response.follow(next_page, callback=self.parse)
         else:
             yield "\nSeems next_page is None\n"
     
-    def parse_event_page(self, response):
-        event_title = response.xpath('//*/div[@class="event"]/h3/text()').extract_first()
+    def parse_attr(self, response):
+        title = response.xpath('//*/div[@class="event"]/h3/text()').extract_first()
         description = response.xpath('//*/div[@class="event"]/div[@class="event__info"]/div[@class="event__description"]').extract_first()
-        date_from_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr/@title').extract_first()
-        date_from = dt.strptime(date_from_raw, '%Y-%m-%d').strftime('%d/%m/%Y')
+        dateFrom_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr/@title').extract_first()
         
-        # Checking if DateTo present on page. If not, will be used date_from value
-        # date_to located in abbr tag with class='value date'
-        is_it_date_to = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@class').extract_first()
+        # Checking if DateTo present on page. If not, will be used dateFrom value
+        # dateTo located in abbr tag with class='value date'
+        is_it_dateTo = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@class').extract_first()
 
-        if is_it_date_to == 'value date':
-            date_to_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@title').extract_first()
-            date_to = dt.strptime(date_to_raw, '%Y-%m-%d').strftime('%d/%m/%Y')
+        if is_it_dateTo == 'value date':
+            dateTo_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr/@title').extract_first()
         else:
-            date_to = date_from
-            
-        start_time_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr[@class="value time"]/text()').extract_first().strip()
-        start_time = start_time_raw[:-2] + ' ' + start_time_raw[-2:].lower()
+            dateTo_raw = dateFrom_raw
         
-        end_time_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr[@class="value time"]/text()').extract_first().strip()
-        end_time = end_time_raw[:-2] + ' ' + end_time_raw[-2:].lower()
-        
-        event_web_site = response.url
-        event_img_raw = response.xpath('//*/div[@class="event__image"]/img/@src').extract_first()
-        event_img = response.urljoin(event_img_raw)
-        
-        return dict({
-            "title": event_title,
-            "organization": "",
-            "description": description,
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "startTime": start_time,
-            "endTime": end_time,
-            "eventWebsite": event_web_site,
-            "In_group_id": "",
-            "ticketUrl": event_web_site,
-            "eventImage": event_img,
-            "street": "",
-            "city": "",
-            "state": "",
-            "zip": "",
-        })
+        #startTime_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr[@class="value time"]/text()').extract_first().strip()
+        #endTime_raw = response.xpath('//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr[@class="value time"]/text()').extract_first().strip()
+        eventImage_raw = response.xpath('//*/div[@class="event__image"]/img/@src').extract_first()
+        eventImage = response.urljoin(eventImage_raw)
+    
+        item_loader = ItemLoader(item=StrandbooksscraperItem(), response=response)
+        item_loader.add_value('title', title)
+        item_loader.add_value('organization', 'Strand Book Store')
+        item_loader.add_value('description', description)
+        item_loader.add_value('dateFrom', dateFrom_raw)
+        item_loader.add_value('dateTo', dateTo_raw)
+        item_loader.add_xpath('startTime', '//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-start"]/abbr[@class="value time"]/text()')
+        item_loader.add_xpath('endTime', '//*/div[@class="event__info"]/p[@class="event__date"]/span[@class="event__date-end"]/abbr[@class="value time"]/text()')
+        item_loader.add_value('eventWebsite', response.url)
+        item_loader.add_value('In_group_id', '')
+        item_loader.add_value('eventImage', eventImage)
+        item_loader.add_value('ticketUrl', response.url)
+        item_loader.add_value('street', '828 Broadway (& 12th Street)')
+        item_loader.add_value('city', 'New York')
+        item_loader.add_value('state', 'New York')
+        item_loader.add_value('zip', 10003)
+        return item_loader.load_item()
